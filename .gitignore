@@ -1,0 +1,30 @@
+# Secrets
+.env
+
+# Generated at runtime
+data/index/
+data/eval_results.json
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large data
+data/tarantool.json

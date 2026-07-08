@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tarantool Chat RAG</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px;
+      background: #f5f7fb;
+      color: #1a1a2e;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.6rem; }
+    .sub { color: #666; margin-bottom: 24px; }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      margin-bottom: 16px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 90px;
+      padding: 12px;
+      border: 1px solid #d0d7e2;
+      border-radius: 8px;
+      font-size: 1rem;
+      resize: vertical;
+    }
+    .actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    button {
+      background: #2563eb;
+      color: #fff;
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    button.secondary { background: #475569; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .status { font-size: .9rem; color: #555; margin-top: 8px; }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 16px;
+      border-radius: 8px;
+      overflow: auto;
+      max-height: 500px;
+      font-size: .9rem;
+      line-height: 1.5;
+    }
+    .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .examples button { background: #e2e8f0; color: #1e293b; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <h1>Tarantool Chat RAG</h1>
+  <p class="sub">Поиск по ~200k сообщений Telegram-чата Tarantool</p>
+
+  <div class="card">
+    <label for="question"><strong>Вопрос</strong></label>
+    <textarea id="question" placeholder="Например: как подключить Oracle к Tarantool?"></textarea>
+    <div class="examples">
+      <button type="button" class="example">как подключить Oracle к Tarantool?</button>
+      <button type="button" class="example">чем отличается vacuum в PostgreSQL?</button>
+      <button type="button" class="example">как организовать кластер Tarantool 3?</button>
+    </div>
+    <div class="actions">
+      <button id="askBtn">Спросить (RAG)</button>
+      <button id="searchBtn" class="secondary">Только поиск</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="card">
+    <strong>Результат</strong>
+    <pre id="output">Открой http://localhost:8080/health для проверки статуса.</pre>
+  </div>
+
+  <script>
+    const questionEl = document.getElementById('question');
+    const outputEl = document.getElementById('output');
+    const statusEl = document.getElementById('status');
+    const askBtn = document.getElementById('askBtn');
+    const searchBtn = document.getElementById('searchBtn');
+
+    document.querySelectorAll('.example').forEach(btn => {
+      btn.addEventListener('click', () => {
+        questionEl.value = btn.textContent;
+      });
+    });
+
+    async function call(endpoint) {
+      const question = questionEl.value.trim();
+      if (!question) {
+        statusEl.textContent = 'Введите вопрос';
+        return;
+      }
+      askBtn.disabled = true;
+      searchBtn.disabled = true;
+      statusEl.textContent = 'Запрос выполняется...';
+      outputEl.textContent = '';
+
+      try {
+        const body = endpoint === '/ask'
+          ? { question, generate_answer: true }
+          : { query: question };
+
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+
+        if (endpoint === '/ask' && data.answer) {
+          outputEl.textContent =
+            'ОТВЕТ:\n' + data.answer +
+            '\n\n---\nНайденные message_ids: ' + (data.message_ids || []).join(', ') +
+            '\n\n---\nПолный JSON:\n' + JSON.stringify(data, null, 2);
+        } else {
+          outputEl.textContent = JSON.stringify(data, null, 2);
+        }
+        statusEl.textContent = 'Готово';
+      } catch (err) {
+        outputEl.textContent = 'Ошибка: ' + err.message;
+        statusEl.textContent = 'Ошибка';
+      } finally {
+        askBtn.disabled = false;
+        searchBtn.disabled = false;
+      }
+    }
+
+    askBtn.addEventListener('click', () => call('/ask'));
+    searchBtn.addEventListener('click', () => call('/search'));
+
+    fetch('/health')
+      .then(r => r.json())
+      .then(h => {
+        statusEl.textContent =
+          'Статус: ok | сообщений: ' + h.indexed_messages +
+          ' | LLM: ' + (h.llm_enabled ? 'on' : 'off') +
+          ' | reranker: ' + (h.reranker_enabled ? 'on' : 'off');
+      })
+      .catch(() => {
+        statusEl.textContent = 'Не удалось получить /health';
+      });
+  </script>
+</body>
+</html>
